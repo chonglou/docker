@@ -1,8 +1,14 @@
 #!/bin/sh
 
 hash docker &>/dev/null || {
-	type yum >/dev/null 2>&1 && sudo yum -y install docker
-	type apt-get >/dev/null 2>&1 && sudo apt-get -y install docker
+	type yum >/dev/null 2>&1 && { 
+		sudo yum -y install docker
+		sudo service docker start
+		sudo chkconfig docker on
+	}
+	type apt-get >/dev/null 2>&1 && { 
+		sudo apt-get -y install docker
+	}
 }
 
 type docker >/dev/null 2>&1 || {
