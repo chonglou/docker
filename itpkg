@@ -1,0 +1,172 @@
+#!/bin/sh
+
+sudo=''
+services=(redmine email)
+
+if [ $EUID -ne 0 ]; then
+	type sudo >/dev/null 2>&1 || { 
+		echo 'You must run as root or using sudo!'
+		exit 1
+	}
+	sudo='sudo'
+fi
+
+hash docker &>/dev/null || {
+	echo "Docker isn't exist! Will install it."
+
+	type yum >/dev/null 2>&1 && { 
+		$sudo yum -y install docker
+		$sudo service docker start
+		$sudo chkconfig docker on
+	}
+
+	type apt-get >/dev/null 2>&1 && { 
+		$sudo apt-get -y install docker
+	}
+
+	type pacman >/dev/null 2>&1 && {
+		$sudo pacman -S --noconfirm docker
+		$sudo systemctl enable docker
+		$sudo systemctl start docker
+	}
+}
+
+type docker >/dev/null 2>&1 || {
+	echo 'Unknown linux distribution'
+	exit 1
+}
+
+function show_version {
+	echo "== SYSTEM =="
+	uname -a
+	$sudo docker version
+	echo "== IT-PACKAGE =="
+	echo "version: 1.0"
+	echo "update date: 2014-09-09"
+}
+
+function show_usage {
+	echo -e "`printf %-16s "Usage: $0"` [-h|--help]"
+	echo -e "`printf %-16s ` [-v|--version]"
+	echo -e "`printf %-16s ` [-l|--list]"
+	echo -e "`printf %-16s ` [install|start|stop|status] [$(IFS='|' ; echo "${services[*]}")]"
+}
+
+function show_error {
+	echo -e "\033[31m$1 \033[0m\n" && show_usage && exit 1
+}
+
+function docker_start {
+	if $sudo docker ps -a | grep -q "itpkg_$2"
+	then
+		$sudo docker start itpkg_$2
+	else
+		$sudo docker run --name itpkg_$2 -d $1 -P --privileged -v /sys/fs/cgroup:/sys/fs/cgroup:ro chonglou/$2:latest /sbin/init
+	fi
+}
+
+function run {
+	case "$1" in
+		install)
+			case "${services[@]}" in
+				*"$2"*)
+					if [[ -z "$2" ]]
+					then
+						show_usage
+					else
+						$sudo docker pull chonglou/$2:latest
+					fi
+					;;
+				*)
+					show_usage
+					;;
+			esac
+					
+			;;
+		start)
+			case "$2" in
+				redmine)
+					docker_start "-p 443:443 -p 80:80" $2
+					;;
+				email)
+					docker_start "-p 25:25 -p 80:80" $2
+					;;
+				*)
+					show_usage
+					;;
+			esac
+					
+			;;
+		stop)
+			case "${services[@]}" in
+				*"$2"*)
+					if [[ -z "$2" ]]
+					then
+						show_usage
+					else
+						echo 'Please wait until done...'
+						$sudo docker stop itpkg_$2
+					fi
+					;;
+				*)
+					show_usage
+					;;
+			esac
+			;;
+
+		status)
+			case "$2" in
+				redmine)
+					;;
+				email)
+					;;
+				*)
+					$sudo docker info
+					$sudo docker ps
+					;;
+			esac
+					
+			;;
+		*)
+			show_usage
+			;;
+	esac
+}
+
+TEMP=`getopt -o hvli:r:q:s --long help,version,list,install:,start:,stop:,status:: -n 'itpkg' -- "$@" 2>/dev/null`
+[ $? != 0 ] && show_error "ERROR: unknown argument!"
+eval set -- "$TEMP"
+
+#echo $TEMP
+
+while :
+do
+	[ -z "$1" ] && show_usage && break;
+	case "$1" in
+		-h|--help)
+			show_usage
+		 	exit 0
+			;;
+		-v|--version)
+			show_version
+		 	exit 0
+			;;
+		-l|--list)
+			$sudo docker images
+			exit 0
+			;;
+		install|start|stop|status)
+			run $1 $2
+			exit 0
+			;;
+		--)
+			shift
+			;;
+		*)
+			show_error "ERROR: unknown argument!"
+			;;
+	esac
+done
+
+
+
